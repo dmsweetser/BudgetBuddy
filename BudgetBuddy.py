@@ -148,10 +148,19 @@ def prompt_for_category(transaction, config, categorized_transactions):
                     transaction['Category'] = selected_category
                     if selected_category not in categorized_transactions:
                         categorized_transactions[selected_category] = []  # Ensure the category exists
-                    categorized_transactions[selected_category].append(transaction)
+
+                    # Check if the description is not already present in the category
+                    if transaction['Description'] not in config["keyword_mapping"][selected_category]:
+                        config["keyword_mapping"][selected_category].append(transaction['Description'])
+                        categorized_transactions[selected_category].append(transaction)
+                    else:
+                        print("Duplicate description. This description is already associated with the selected category.")
+                        continue  # Retry the loop
+
                 else:
                     print("Invalid category. Please choose a valid category or 'Ignore'.")
                     continue  # Retry the loop
+
                 break  # Exit the loop if a valid choice is made
             else:
                 print("Invalid input. Please choose a valid category or 'Ignore'.")
@@ -251,10 +260,7 @@ def export_config(config, file_path):
     """Exports the config to various formats."""
     try:
         with open(file_path, 'w') as file:
-            if "budget" in config and len(config["budget"]) > 0:
-                json.dump({"budget": config["budget"]}, file)
-            elif "keyword_mapping" in config:
-                json.dump({"keyword_mapping": config["keyword_mapping"]}, file)
+            json.dump(config, file)
     except Exception as e:
         print(f"Error exporting config to '{file_path}': {e}")
 

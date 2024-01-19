@@ -4,3 +4,4 @@ output/*
 !output/placeholder.txt
 venv
 config.json
+transactions.csv
