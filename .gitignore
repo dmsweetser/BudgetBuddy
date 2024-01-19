@@ -1,0 +1,6 @@
+input/*
+!input/placeholder.txt
+output/*
+!output/placeholder.txt
+venv
+config.json

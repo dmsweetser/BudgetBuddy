@@ -1,2 +1,3 @@
 # BudgetBuddy
-A console budgeting script
+
+This is a simple budgeting script.
