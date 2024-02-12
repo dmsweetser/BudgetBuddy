@@ -23,10 +23,19 @@ def write_csv(file_path, data):
         writer.writerows(data)
 
 def read_csv(file_path):
-    """Reads a CSV file and returns the data as a list of dictionaries."""
+    """Reads a CSV file from the input directory and returns the data as a list of dictionaries."""
     with open(file_path, 'r') as csv_file:
         reader = csv.DictReader(csv_file)
-        return list(reader)
+        if "Transaction Date" in reader.fieldnames:
+            # Handle the first source data format
+            transactions = [{'Date': row['Transaction Date'], 'Description': row['Description'], 'Amount': row['Amount']} for row in reader]
+        elif "Date" in reader.fieldnames:
+            # Handle the second source data format
+            transactions = [{'Date': row['Date'], 'Description': row['Original Description'], 'Amount': row['Amount']} for row in reader]
+        else:
+            raise ValueError("Unable to determine the format of the CSV file.")
+
+        return transactions
 
 def append_csv(file_path, data):
     """Appends the given data to a CSV file."""
@@ -100,16 +109,20 @@ def process_and_store_transactions(transactions, processed_file_path, categorize
         for cat, transactions_list in categorized_transactions.items():
             for trans in transactions_list:
                 if trans['transaction']['Description'].lower() == description.lower() and abs(trans['transaction']['Amount'] - amount) < 0.01:
-                    category = cat
+                    category = cat  
                     break
 
         transaction['Category'] = category
         processed_data.append({'Date': date, 'Description': description, 'Amount': -amount, 'Category': category})
 
-    write_csv(processed_file_path, [{'Date': d, **transaction} for d, transaction in processed_data])
+    print("Processed Data:", processed_data)  # Debugging print statement
+    write_csv(processed_file_path, processed_data)
 
 def calculate_budget_status(categorized_transactions, budget):
     """Calculates and displays the budget status."""
+
+    print (categorized_transactions)
+    
     total_spent = {category: sum([abs(float(transaction['Amount'])) for transaction in transactions]) for category, transactions in categorized_transactions.items()}
     total_budget = sum(budget.values())
     total_spent_all_categories = sum(total_spent.values())
@@ -141,24 +154,30 @@ def save_results_as_image(categorized_transactions, budget_status, total_budget,
 
     plt.figure(figsize=(12, 8))
 
-    if categorized_transactions:  # Check if categorized_transactions is not empty
-        ax1 = plt.subplot2grid((1, 3), (0, 0))
-        ax1.barh(range(len(categorized_transactions)), [abs(x['Amount']) for x in categorized_transactions[list(categorized_transactions.keys())[0]]], align='left', color='g')
-        ax1.set_xlabel('Total Spent')
-        ax1.set_title('Top Category Spending')
-        ax1.tick_params(axis='y', labelsize=8)
+    # Check if categorized_transactions is not empty
+    if categorized_transactions:
+        categories = list(categorized_transactions.keys())
+        non_empty_categories = [cat for cat in categories if categorized_transactions[cat]]  # Check if each category has transactions
 
-    ax2 = plt.subplot2grid((1, 3), (0, 1))
-    ax2.barh(range(len(budget_status)), [abs(x['spent']) for x in budget_status.values()], align='left', color='r')
-    ax2.set_xlabel('Total Spent')
-    ax2.set_title('Budget Status')
-    ax2.tick_params(axis='y', labelsize=8)
+        if non_empty_categories:
+            num_categories = len(non_empty_categories)
 
-    ax3 = plt.subplot2grid((1, 3), (0, 2))
-    ax3.barh(range(len(budget_status)), [abs(x['budget']) for x in budget_status.values()], align='left', color='b')
-    ax3.set_xlabel('Total Budget')
-    ax3.set_title('Total Budget Allocated')
-    ax3.tick_params(axis='y', labelsize=8)
+            for idx, category in enumerate(non_empty_categories):
+                transactions = categorized_transactions[category]
+                total_spent = sum(abs(transaction['Amount']) for transaction in transactions)
+
+                ax = plt.subplot2grid((1, num_categories), (0, idx))
+                ax.barh(range(len(transactions)), [abs(x['Amount']) for x in transactions], align='left', color='g')
+                ax.set_xlabel('Total Spent')
+                ax.set_title(f'Spending for {category}')
+                ax.tick_params(axis='y', labelsize=8)
+
+        else:
+            print("No transactions found for any category. Unable to generate image.")
+            return
+    else:
+        print("No categorized transactions found. Unable to generate image.")
+        return
 
     plt.figtext(0.5, 0.01, f"Total Spent: ${total_spent_all_categories}", ha="center")
     plt.figtext(0.5, 0.99, f"Total Budget: ${total_budget}", ha="center")
@@ -167,14 +186,14 @@ def save_results_as_image(categorized_transactions, budget_status, total_budget,
     plt.savefig(image_filename)
     print(f"\nResults saved as {image_filename}")
 
-
 def main():
     """Initializes the program and processes transactions."""
     if not os.path.exists(CONFIG_FILE):
         default_config = {
             "keyword_mapping": {
                 "Food": ["grocery", "food", "supermarket"],
-                "Transportation": ["gas", "petrol", "public transportation"]
+                "Transportation": ["gas", "petrol", "public transportation"],
+                "Uncategorized": []
             },
             "budget": {
                 "Food": 300.00,
@@ -188,15 +207,28 @@ def main():
 
     initialize_csv(PROCESSED_FILE_PATH)
 
-    transactions = read_csv(PROCESSED_FILE_PATH)
-    categorized_transactions = categorize_transactions(transactions, config["keyword_mapping"])
+    # Loop through all files in the input directory
+    for filename in os.listdir(INPUT_DIRECTORY):
+        if filename.endswith(".csv"):
+            input_file_path = os.path.join(INPUT_DIRECTORY, filename)
+            transactions = read_csv(input_file_path)
+            print("Transactions loaded from", input_file_path)
+            print("Transactions:", transactions)
 
-    for category, transactions in categorized_transactions.items():
-        if len(transactions) > 0:
-            process_and_store_transactions(transactions, PROCESSED_FILE_PATH, categorized_transactions)
+            categorized_transactions = categorize_transactions(transactions, config["keyword_mapping"])
+            print("Categorized Transactions:", categorized_transactions)
+
+            for category, transactions in categorized_transactions.items():
+                if len(transactions) > 0:
+                    process_and_store_transactions(transactions, PROCESSED_FILE_PATH, categorized_transactions)
 
     calculate_budget_status(categorized_transactions, config["budget"])
     save_results_as_image(categorized_transactions, config["budget"], sum(config["budget"].values()), sum([sum([abs(float(transaction['Amount'])) for transaction in transactions]) for transactions in categorized_transactions.values()]), OUTPUT_DIRECTORY)
+
+    # Print contents of the processed file
+    print("Contents of the processed file:")
+    with open(PROCESSED_FILE_PATH, 'r') as processed_file:
+        print(processed_file.read())
 
 if __name__ == "__main__":
     main()
