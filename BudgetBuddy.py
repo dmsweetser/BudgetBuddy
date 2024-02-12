@@ -1,9 +1,6 @@
-# Revised code with improvements and additional features
-
 import os
 import json
 import datetime
-import timedelta
 import csv
 import matplotlib.pyplot as plt
 
@@ -40,8 +37,6 @@ def append_csv(file_path, data):
 def categorize_transactions(transactions, keyword_mapping):
     """Categorizes transactions based on the given keyword mapping."""
     categorized_transactions = {category: [] for category in keyword_mapping}
-    uncategorized_transactions = []
-    other_transactions = []
 
     for transaction in transactions:
         description = transaction.get('Description', '').lower()
@@ -58,13 +53,9 @@ def categorize_transactions(transactions, keyword_mapping):
         if category == 'Ignore':
             continue
 
-        if category not in categorized_transactions:
-            categorized_transactions[category] = []
-
         categorized_transactions[category].append({'transaction': transaction, 'keyword_used': keyword_used})
-        uncategorized_transactions.remove(transaction) if transaction in uncategorized_transactions else None
 
-    return categorized_transactions, uncategorized_transactions, other_transactions
+    return categorized_transactions
 
 def prompt_for_category(transaction, config):
     """Prompts the user to select a category for an uncategorized transaction."""
@@ -131,7 +122,7 @@ def calculate_budget_status(categorized_transactions, budget):
 
     print("\nBudget Status:")
     for category, status in budget_status.items():
-        print(f"{category}: Budget - ${format(status['budget'], ',.2f')}, Spent - ${format(status['spent'], ',.2f')}, Percentage Used - {status['percentage_used:.2f']}%")
+        print(f"{category}: Budget - ${format(status['budget'], ',.2f')}, Spent - ${format(status['spent'], ',.2f')}, Percentage Used - {status['percentage_used']:.2f}%")
         if status['spent'] > status['budget']:
             print(f"Warning: You have exceeded the budget for this category by ${format(abs(status['spent'] - status['budget']), ',.2f')}")
 
@@ -150,20 +141,21 @@ def save_results_as_image(categorized_transactions, budget_status, total_budget,
 
     plt.figure(figsize=(12, 8))
 
-    ax1 = plt.subplot2grid(1, 3, loc='top')
-    ax1.barh(range(len(categorized_transactions)), [abs(x['Amount']) for x in categorized_transactions[list(categorized_transactions.keys())[0]]], align='left', color='g')
-    ax1.set_xlabel('Total Spent')
-    ax1.set_title('Top Category Spending')
-    ax1.tick_params(axis='y', labelsize=8)
+    if categorized_transactions:  # Check if categorized_transactions is not empty
+        ax1 = plt.subplot2grid((1, 3), (0, 0))
+        ax1.barh(range(len(categorized_transactions)), [abs(x['Amount']) for x in categorized_transactions[list(categorized_transactions.keys())[0]]], align='left', color='g')
+        ax1.set_xlabel('Total Spent')
+        ax1.set_title('Top Category Spending')
+        ax1.tick_params(axis='y', labelsize=8)
 
-    ax2 = plt.subplot2grid(1, 3, loc='(50%, 50%)')
-    ax2.barh(range(len(budget_status)), [abs(x['spent']) for x in budget_status], align='left', color='r')
+    ax2 = plt.subplot2grid((1, 3), (0, 1))
+    ax2.barh(range(len(budget_status)), [abs(x['spent']) for x in budget_status.values()], align='left', color='r')
     ax2.set_xlabel('Total Spent')
     ax2.set_title('Budget Status')
     ax2.tick_params(axis='y', labelsize=8)
 
-    ax3 = plt.subplot2grid(1, 3, loc='bottom')
-    ax3.barh(range(len(budget_status)), [abs(x['budget']) for x in budget_status], align='left', color='b')
+    ax3 = plt.subplot2grid((1, 3), (0, 2))
+    ax3.barh(range(len(budget_status)), [abs(x['budget']) for x in budget_status.values()], align='left', color='b')
     ax3.set_xlabel('Total Budget')
     ax3.set_title('Total Budget Allocated')
     ax3.tick_params(axis='y', labelsize=8)
@@ -174,6 +166,7 @@ def save_results_as_image(categorized_transactions, budget_status, total_budget,
     plt.tight_layout()
     plt.savefig(image_filename)
     print(f"\nResults saved as {image_filename}")
+
 
 def main():
     """Initializes the program and processes transactions."""
@@ -195,12 +188,15 @@ def main():
 
     initialize_csv(PROCESSED_FILE_PATH)
 
+    transactions = read_csv(PROCESSED_FILE_PATH)
+    categorized_transactions = categorize_transactions(transactions, config["keyword_mapping"])
+
     for category, transactions in categorized_transactions.items():
         if len(transactions) > 0:
             process_and_store_transactions(transactions, PROCESSED_FILE_PATH, categorized_transactions)
 
     calculate_budget_status(categorized_transactions, config["budget"])
-    save_results_as_image(categorized_transactions, config["budget"], total_spent_all_categories, OUTPUT_DIRECTORY)
+    save_results_as_image(categorized_transactions, config["budget"], sum(config["budget"].values()), sum([sum([abs(float(transaction['Amount'])) for transaction in transactions]) for transactions in categorized_transactions.values()]), OUTPUT_DIRECTORY)
 
 if __name__ == "__main__":
     main()
